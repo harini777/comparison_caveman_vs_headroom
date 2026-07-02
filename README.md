@@ -103,11 +103,11 @@ python comparison.py
 
 ## 📖 How the Compression Strategies Work
 
-### 🦴 Caveman (by Julius Brussee)
-Compresses **output** tokens by using a system prompt that forces the LLM to respond in a terse, no-filler style. The input stays the same — only the generated response gets shorter.
+### 🦴 [Caveman](https://github.com/JuliusBrussee/caveman) (by Julius Brussee)
+Compresses **output** tokens using the actual system prompt from [Caveman's `SKILL.md`](https://github.com/JuliusBrussee/caveman/blob/main/skills/caveman/SKILL.md). Caveman is a prompt-based skill — the system prompt instructs the LLM to drop articles, filler words, and pleasantries while keeping all technical substance intact. This is the real, canonical prompt — not a simulation.
 
-### 📦 Headroom (by Headroom Labs)
-Compresses **input** tokens by pre-processing the context (e.g., JSON tool output) before it reaches the LLM. Repetitive structures are deduplicated and converted to compact TSV format.
+### 📦 [Headroom](https://github.com/chopratejas/headroom) (by Headroom Labs)
+Compresses **input** tokens using the real **`headroom-ai`** Python SDK (`from headroom import compress`). It runs locally on your machine — no data egress — and intelligently deduplicates and restructures context before sending it to the LLM.
 
 ### 🤝 Best Together
 The two strategies are complementary — Caveman cuts output, Headroom cuts input. Combining both yields maximum token savings.

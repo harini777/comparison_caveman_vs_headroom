@@ -1,5 +1,5 @@
 streamlit
 plotly
 groq
-headroom
+headroom-ai[all]
 python-dotenv

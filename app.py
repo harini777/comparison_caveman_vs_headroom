@@ -4,6 +4,7 @@ import streamlit as st
 import plotly.graph_objects as go  # type: ignore[import-untyped]
 from dotenv import load_dotenv
 from groq import Groq
+from headroom import compress
 
 load_dotenv()
 
@@ -365,9 +366,16 @@ TOOL_OUTPUT = json.dumps({
     ]
 }, indent=2)
 
-CAVEMAN_SYSTEM = """You are a financial assistant. Respond terse like smart caveman. All technical substance stay. Only fluff die.
+# ── Caveman system prompt — from github.com/JuliusBrussee/caveman (skills/caveman/SKILL.md) ──
+CAVEMAN_SYSTEM = """You are a financial assistant.
 
-Rules: Drop articles (a/an/the), filler (just/really/basically/actually/simply), pleasantries (sure/certainly/of course/happy to), hedging. Fragments OK. Short synonyms (big not extensive, fix not "implement a solution for"). No tool-call narration, no decorative tables/emoji. Technical terms exact. Code blocks unchanged. Errors quoted exact.
+Respond terse like smart caveman. All technical substance stay. Only fluff die.
+
+ACTIVE EVERY RESPONSE. No revert after many turns. No filler drift. Still active if unsure.
+
+Rules: Drop articles (a/an/the), filler (just/really/basically/actually/simply), pleasantries (sure/certainly/of course/happy to), hedging. Fragments OK. Short synonyms (big not extensive, fix not "implement a solution for"). No tool-call narration, no decorative tables/emoji, no dumping long raw error logs unless asked — quote shortest decisive line. Standard well-known tech acronyms OK (DB/API/HTTP); never invent new abbreviations reader can't decode. Technical terms exact. Code blocks unchanged. Errors quoted exact.
+
+No self-reference. Never name or announce the style. No "caveman mode on", no third-person caveman tags.
 
 Pattern: [thing] [action] [reason]. [next step].
 
@@ -379,69 +387,7 @@ Keep all financial data exact. No rounding. No omitting transaction IDs or amoun
 NORMAL_SYSTEM = """You are a helpful financial assistant. Respond clearly and thoroughly."""
 
 
-def headroom_compress(tool_output_str):
-    """Simulate Headroom's input compression.
-
-    Headroom compresses input tokens by:
-    1. Parsing repetitive JSON arrays of objects
-    2. Extracting common schema (column headers)
-    3. Factoring out constant fields (e.g., all have currency=USD)
-    4. Converting to compact TSV format
-    5. Stripping redundant whitespace and keys
-
-    This is what Headroom's proxy/middleware does before sending to the LLM.
-    """
-    data = json.loads(tool_output_str)
-    results = data.get("results", [])
-    if not results:
-        return tool_output_str
-
-    # Step 1: Find all unique keys across records
-    all_keys = []
-    seen = set()
-    for record in results:
-        for k in record:
-            if k not in seen:
-                all_keys.append(k)
-                seen.add(k)
-
-    # Step 2: Identify constant fields (same value across ALL records)
-    constant_fields = {}
-    variable_keys = []
-    for key in all_keys:
-        values = [r.get(key) for r in results]
-        non_none = [v for v in values if v is not None]
-        if non_none and all(v == non_none[0] for v in non_none) and len(non_none) == len(results):
-            constant_fields[key] = non_none[0]
-        else:
-            variable_keys.append(key)
-
-    # Step 3: Build compact output
-    lines = []
-    lines.append(f"api={data.get('api', '')} total={data.get('total_records', '')}")
-
-    # Show factored-out constants
-    if constant_fields:
-        const_parts = [f"{k}={v}" for k, v in constant_fields.items()]
-        lines.append(f"[all records] {' '.join(const_parts)}")
-
-    # TSV header for variable fields
-    lines.append("\t".join(variable_keys))
-
-    # TSV rows — only variable fields
-    for record in results:
-        row = []
-        for key in variable_keys:
-            val = record.get(key, "")
-            row.append(str(val))
-        lines.append("\t".join(row))
-
-    return "\n".join(lines)
-
-
-def build_messages(system_prompt, tool_content=None):
-    if tool_content is None:
-        tool_content = TOOL_OUTPUT
+def build_messages(system_prompt):
     return [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": "Check my recent transactions and flag anything suspicious."},
@@ -453,7 +399,7 @@ def build_messages(system_prompt, tool_content=None):
                 "function": {"name": "get_transactions", "arguments": "{}"}
             }]
         },
-        {"role": "tool", "tool_call_id": "call_001", "content": tool_content},
+        {"role": "tool", "tool_call_id": "call_001", "content": TOOL_OUTPUT},
         {"role": "user", "content": QUESTION}
     ]
 
@@ -747,10 +693,10 @@ if run_clicked and api_key:
         in_caveman = r2.usage.prompt_tokens
         out_caveman = r2.usage.completion_tokens
 
-        # ── 3. Headroom (input compression) ──
-        compressed_tool_output = headroom_compress(TOOL_OUTPUT)
-        headroom_messages = build_messages(NORMAL_SYSTEM, tool_content=compressed_tool_output)
-        r3 = client.chat.completions.create(model=MODEL, messages=headroom_messages)
+        # ── 3. Headroom (input compression via real Headroom SDK) ──
+        headroom_messages = build_messages(NORMAL_SYSTEM)
+        compressed = compress(headroom_messages)
+        r3 = client.chat.completions.create(model=MODEL, messages=compressed.messages)
         ans_headroom = r3.choices[0].message.content
         in_headroom = r3.usage.prompt_tokens
         out_headroom = r3.usage.completion_tokens
