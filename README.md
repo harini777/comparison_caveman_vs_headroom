@@ -51,7 +51,6 @@ streamlit run app.py
 
 ```
 ├── app.py              # Streamlit dashboard (interactive UI)
-├── comparison.py       # CLI script (terminal output)
 ├── requirements.txt    # Python dependencies
 ├── .env.example        # Template for environment variables
 ├── .gitignore          # Keeps secrets & artifacts out of git
